@@ -1,0 +1,75 @@
+---
+title: "02_new_analysis"
+author: "pacha"
+date: "November 8, 2017"
+output: html_document
+---
+
+# Inmates in Catalonia and Spain
+
+# STILL IN PROGRESS
+
+## 1st: Import data
+
+Tables downloaded from [Idescat](https://www.idescat.cat/economia/inec?tc=3&id=de03) in Excel format. 
+
+Each dataset has 6 columns: 
+
+* Year
+* Number of convicted inmates
+* Percentage of convicted inmates from the total
+* Number of preventive inmates
+* Percentage of preventive inmates from the total
+* Total number of inmates
+
+*This dataset is completely messy!!!!!!!*
+
+
+```{r download_and_tidy}
+if (!require("pacman")) install.packages("pacman")
+p_load(readr,tidyr,dplyr,readxl)
+
+url = "https://www.idescat.cat/economia/inec?tc=3&id=de03&dt=201600&ex=1"
+file = "immates_data.xls"
+if(!file.exists(file))(try(download.file(url,file)))
+
+################################
+
+# Catalunya
+
+immates_catalunya = immates_data <- read_excel("immates_data.xls", sheet = "Full 2", col_names = FALSE, na = "..", skip = 7, n_max = 4) %>% 
+  setNames(c("category",paste("value", 2014:2016, sep = "_"), paste("percent_change", 2014:2016, sep = "_"))) %>% 
+  filter(category != "Penats (%)", category != "Preventius (%)")
+
+immates_catalunya_values = immates_catalunya %>% select(category, matches("value")) %>% 
+  gather(year, value, -category) %>% 
+  mutate(year = as.integer(str_replace(year, "value_", "")),
+         category = if_else(category == "Penats (nombre)", "convicted", "preventive imprisonment"))
+  
+immates_catalunya_percents = immates_catalunya %>% select(category, matches("percent_change")) %>% 
+  gather(year, value, -category) %>% 
+  mutate(year = as.integer(str_replace(year, "percent_change_", "")),
+         category = if_else(category == "Penats (nombre)", "convicted", "preventive imprisonment"))
+
+rm(immates_catalunya)
+
+################################
+
+# Spain
+
+immates_spain = immates_data <- read_excel("immates_data.xls", sheet = "Full 3", col_names = FALSE, na = "..", skip = 7, n_max = 4) %>% 
+  setNames(c("category",paste("value", 2014:2016, sep = "_"), paste("percent_change", 2014:2016, sep = "_"))) %>% 
+  filter(category != "Penats (%)", category != "Preventius (%)")
+
+immates_spain_values = immates_catalunya %>% select(category, matches("value")) %>% 
+  gather(year, value, -category) %>% 
+  mutate(year = as.integer(str_replace(year, "value_", "")),
+         category = if_else(category == "Penats (nombre)", "convicted", "preventive imprisonment"))
+  
+immates_spain_percents = immates_catalunya %>% select(category, matches("percent_change")) %>% 
+  gather(year, value, -category) %>% 
+  mutate(year = as.integer(str_replace(year, "percent_change_", "")),
+         category = if_else(category == "Penats (nombre)", "convicted", "preventive imprisonment"))
+
+rm(immates_spain)
+```
