@@ -1,13 +1,20 @@
 ---
-title: "02_new_analysis"
+title: "Inmates in Catalonia and Spain"
 author: "pacha"
 date: "November 8, 2017"
-output: html_document
+output: 
+  prettydoc::html_pretty:
+    theme: architect
+    highlight: github
 ---
 
-# Inmates in Catalonia and Spain
+```{r setup, cache = FALSE, echo = FALSE, message = FALSE, warning = FALSE, tidy = FALSE}
+knitr::opts_chunk$set(message = F, error = F, warning = F, comment = NA, fig.align = 'center', dpi = 100, fig.width=9, fig.height=8, tidy = F, cache = T, dev = 'CairoPNG')
+```
 
-# STILL IN PROGRESS
+# WORK IN PROGRESS
+
+Run `install.packages("prettydoc")` just once before composing this document. Without prettydoc it won't work.
 
 ## 1st: Import data
 
@@ -22,12 +29,12 @@ Each dataset has 6 columns:
 * Percentage of preventive inmates from the total
 * Total number of inmates
 
-*This dataset is completely messy!!!!!!!*
-
+*This dataset is completely messy!*
 
 ```{r download_and_tidy}
 if (!require("pacman")) install.packages("pacman")
-p_load(readr,tidyr,dplyr,readxl)
+p_load(readr,tidyr,dplyr,stringr,readxl,ggplot2,viridis)
+p_load_gh("ropenscilabs/skimr")
 
 url = "https://www.idescat.cat/economia/inec?tc=3&id=de03&dt=201600&ex=1"
 file = "immates_data.xls"
@@ -37,19 +44,23 @@ if(!file.exists(file))(try(download.file(url,file)))
 
 # Catalunya
 
-immates_catalunya = immates_data <- read_excel("immates_data.xls", sheet = "Full 2", col_names = FALSE, na = "..", skip = 7, n_max = 4) %>% 
+immates_catalunya = read_excel("immates_data.xls", sheet = "Full 2", col_names = FALSE, na = "..", skip = 7, n_max = 4) %>% 
   setNames(c("category",paste("value", 2014:2016, sep = "_"), paste("percent_change", 2014:2016, sep = "_"))) %>% 
   filter(category != "Penats (%)", category != "Preventius (%)")
 
 immates_catalunya_values = immates_catalunya %>% select(category, matches("value")) %>% 
   gather(year, value, -category) %>% 
-  mutate(year = as.integer(str_replace(year, "value_", "")),
-         category = if_else(category == "Penats (nombre)", "convicted", "preventive imprisonment"))
+  mutate(country = "Catalunya",
+         year = as.integer(str_replace(year, "value_", "")),
+         category = if_else(category == "Penats (nombre)", "convicted", "preventive imprisonment")) %>% 
+  select(country, category, year, value)
   
 immates_catalunya_percents = immates_catalunya %>% select(category, matches("percent_change")) %>% 
-  gather(year, value, -category) %>% 
-  mutate(year = as.integer(str_replace(year, "percent_change_", "")),
-         category = if_else(category == "Penats (nombre)", "convicted", "preventive imprisonment"))
+  gather(year, percent_change, -category) %>% 
+  mutate(country = "Catalunya",
+         year = as.integer(str_replace(year, "percent_change_", "")),
+         category = if_else(category == "Penats (nombre)", "convicted", "preventive imprisonment")) %>% 
+  select(country, category, year, percent_change)
 
 rm(immates_catalunya)
 
@@ -57,19 +68,77 @@ rm(immates_catalunya)
 
 # Spain
 
-immates_spain = immates_data <- read_excel("immates_data.xls", sheet = "Full 3", col_names = FALSE, na = "..", skip = 7, n_max = 4) %>% 
+immates_spain_values = read_excel("immates_data.xls", sheet = "Full 3", col_names = FALSE, na = ":", skip = 7, n_max = 4) %>% 
   setNames(c("category",paste("value", 2014:2016, sep = "_"), paste("percent_change", 2014:2016, sep = "_"))) %>% 
-  filter(category != "Penats (%)", category != "Preventius (%)")
-
-immates_spain_values = immates_catalunya %>% select(category, matches("value")) %>% 
+  filter(category != "Penats (%)", category != "Preventius (%)") %>% 
+  select(category, matches("value")) %>% 
   gather(year, value, -category) %>% 
-  mutate(year = as.integer(str_replace(year, "value_", "")),
-         category = if_else(category == "Penats (nombre)", "convicted", "preventive imprisonment"))
+  mutate(country = "Spain",
+         year = as.integer(str_replace(year, "value_", "")),
+         category = if_else(category == "Penats (nombre)", "convicted", "preventive imprisonment")) %>% 
+  select(country, category, year, value)
   
-immates_spain_percents = immates_catalunya %>% select(category, matches("percent_change")) %>% 
-  gather(year, value, -category) %>% 
-  mutate(year = as.integer(str_replace(year, "percent_change_", "")),
-         category = if_else(category == "Penats (nombre)", "convicted", "preventive imprisonment"))
+immates_spain_percents = read_excel("immates_data.xls", sheet = "Full 3", col_names = FALSE, na = "..", skip = 7, n_max = 4) %>% 
+  setNames(c("category",paste("value", 2014:2016, sep = "_"), paste("percent_change", 2014:2016, sep = "_"))) %>% 
+  filter(category != "Penats (%)", category != "Preventius (%)") %>% 
+  select(category, matches("percent_change")) %>% 
+  gather(year, percent_change, -category) %>% 
+  mutate(country = "Spain",
+         year = as.integer(str_replace(year, "percent_change_", "")),
+         category = if_else(category == "Penats (nombre)", "convicted", "preventive imprisonment")) %>% 
+  select(country, category, year, percent_change)
 
-rm(immates_spain)
+################################
+
+# Tidy Data
+immates_values = bind_rows(immates_catalunya_values, immates_spain_values)
+immates_percents = bind_rows(immates_catalunya_percents, immates_spain_percents)
+
+rm(immates_catalunya_percents, immates_catalunya_values)
+rm(immates_spain_percents, immates_spain_values)
+
+immates_tidy = left_join(immates_values, immates_percents, by = c("country","category", "year"))
+rm(immates_values, immates_percents)
+
+immates_tidy
 ```
+
+## 2nd: Generate main statistics
+
+Instead of classic `summary` here I'm using [Ropenscilab](https://github.com/ropenscilabs/skimr)'s `skimr`.
+
+```{r stats}
+skim(immates_tidy)
+skim(immates_tidy %>% filter(country == "Catalunya"))
+skim(immates_tidy %>% filter(country == "Spain"))
+```
+
+Which is the maximum of convicted inmates in Catalan prisons in a year?
+
+```{r stats2}
+immates_tidy %>% filter(value == max(value, na.rm = T))
+
+# the same in this case
+immates_tidy %>% filter(country == "Catalunya") %>%  filter(value == max(value))
+immates_tidy %>% filter(country == "Catalunya") %>%  filter(value == max(value, na.rm = T))
+
+immates_tidy %>% filter(country == "Spain") %>%  filter(value == max(value, na.rm = T))
+```
+
+## 3rd: Create a chart
+
+
+```{r barplot}
+ggplot(data = immates_tidy %>% mutate(label = paste0(country, " (", category, ")"))) +
+  geom_bar(mapping = aes(x = year, y = value, fill = label), stat = "identity") +
+  ggtitle("Immates in Catalonia and Spain") +
+  theme_minimal(base_size = 13) +
+  scale_fill_viridis(end = 0.85, discrete = TRUE)
+
+ggplot(data = immates_tidy %>% mutate(label = paste0(country, " (", category, ")"))) +
+  geom_bar(mapping = aes(x = year, y = value, fill = label), stat = "identity", position = "dodge") +
+  ggtitle("Immates in Catalonia and Spain") +
+  theme_minimal(base_size = 13) +
+  scale_fill_viridis(end = 0.85, discrete = TRUE)
+```
+
